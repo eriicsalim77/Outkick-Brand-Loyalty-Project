@@ -1,0 +1,429 @@
+================================================================================
+CODING SESSION TRANSCRIPT — OutKick Brand Loyalty Portal MVP
+YC Startup School Application
+Date: May 2026
+================================================================================
+
+--- SESSION START ---
+
+[Builder]: Alright, let's build this out. The core problem is simple: OutKick
+gets solid traffic, but readers consume one article and bounce. We want a
+lightweight loyalty system that gives people a reason to come back daily. Think
+streaks, points, badges — but actually connected to real reading behavior, not
+just "log in every day" stuff.
+
+Let me scope the MVP before writing a single line of code.
+
+MVP must-haves:
+  - User auth (email/password + maybe Google OAuth later)
+  - Points system tied to article reads + time-on-page
+  - Daily streak tracking
+  - Badge unlocks at milestones
+  - Personalized challenge recommendations (AI-powered)
+  - Simple analytics dashboard (admin view)
+  - Live top 5 OutKick articles surfaced at the bottom of the leaderboard
+
+MVP non-goals:
+  - Native mobile app
+  - Real-time multiplayer leaderboard (WebSockets)
+  - Full CMS integration (we'll poll the RSS feed)
+  - Payment / premium tiers
+
+That's a shippable scope. Let's design the data model first.
+
+--- SYSTEM DESIGN ---
+
+[Builder]: Database is PostgreSQL via Supabase. Here's what I'm thinking for
+the core schema:
+
+  users
+    id (uuid, PK)
+    email (unique)
+    username
+    password_hash
+    created_at
+    last_seen_at
+
+  user_stats
+    user_id (FK -> users)
+    total_points INT
+    current_streak INT
+    longest_streak INT
+    last_activity_date DATE
+
+  point_events
+    id (uuid)
+    user_id (FK)
+    event_type  -- 'article_read', 'daily_login', 'challenge_complete', 'badge_earned'
+    points INT
+    metadata JSONB  -- article_id, time_spent_seconds, etc.
+    created_at
+
+  badges
+    id
+    name
+    description
+    icon_url
+    required_points INT  -- or trigger logic stored here
+
+  user_badges
+    user_id (FK)
+    badge_id (FK)
+    earned_at
+
+  challenges
+    id
+    title
+    description
+    points_reward INT
+    challenge_type  -- 'read_streak', 'topic_focus', 'time_on_site'
+    active BOOLEAN
+
+  user_challenges
+    user_id (FK)
+    challenge_id (FK)
+    assigned_at
+    completed_at (nullable)
+
+[Claude]: The schema looks solid. One thing to flag: storing point_events as
+an append-only log is the right call — don't try to maintain a single mutable
+"points balance" column. You sum from the log when you need the balance, or
+you keep user_stats as a materialized cache that you update on each event. The
+latter is better for read performance without adding real complexity.
+
+For streak logic: store last_activity_date in user_stats. On each login/read
+event, compare today's date to last_activity_date. If it's yesterday, increment
+streak. If it's today, do nothing. If it's older, reset to 1. Simple, no cron
+job needed.
+
+[Builder]: Yeah that's what I was going to do. The JSONB on point_events gives
+us flexibility for metadata without over-normalizing at MVP stage. If we need
+to query article_id specifically later, we can add a generated column index.
+
+API design — I'll use Next.js API routes for now, maybe migrate to a standalone
+Express service if load justifies it:
+
+  POST /api/auth/register
+  POST /api/auth/login
+  GET  /api/user/me          -- profile + stats
+  POST /api/events/track     -- the main intake endpoint
+  GET  /api/leaderboard      -- top users by points
+  GET  /api/challenges/my    -- user's active challenges
+  POST /api/challenges/complete
+  GET  /api/articles/top     -- polls OutKick RSS, returns top 5
+  GET  /api/ai/suggestions   -- OpenAI-powered engagement nudges
+
+--- IMPLEMENTATION ---
+
+[Builder]: Starting with the track endpoint. This is the core — everything
+flows through it.
+
+// pages/api/events/track.ts
+
+import { createClient } from '@supabase/supabase-js'
+import { verifyJWT } from '@/lib/auth'
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+)
+
+export default async function handler(req, res) {
+  if (req.method !== 'POST') return res.status(405).end()
+
+  const user = await verifyJWT(req)
+  if (!user) return res.status(401).json({ error: 'Unauthorized' })
+
+  const { event_type, points, metadata } = req.body
+
+  // Validate event type
+  const validEvents = ['article_read', 'daily_login', 'challenge_complete']
+  if (!validEvents.includes(event_type)) {
+    return res.status(400).json({ error: 'Invalid event_type' })
+  }
+
+  // Insert event log
+  const { error: eventError } = await supabase
+    .from('point_events')
+    .insert({ user_id: user.id, event_type, points, metadata })
+
+  if (eventError) return res.status(500).json({ error: eventError.message })
+
+  // Update stats: increment points, handle streak
+  const today = new Date().toISOString().split('T')[0]
+
+  const { data: stats } = await supabase
+    .from('user_stats')
+    .select('*')
+    .eq('user_id', user.id)
+    .single()
+
+  let newStreak = stats.current_streak
+  const lastDate = stats.last_activity_date
+
+  if (lastDate === null) {
+    newStreak = 1
+  } else if (lastDate === getPreviousDay(today)) {
+    newStreak = newStreak + 1
+  } else if (lastDate !== today) {
+    newStreak = 1
+  }
+  // if lastDate === today, streak stays the same
+
+  await supabase
+    .from('user_stats')
+    .update({
+      total_points: stats.total_points + points,
+      current_streak: newStreak,
+      longest_streak: Math.max(stats.longest_streak, newStreak),
+      last_activity_date: today,
+    })
+    .eq('user_id', user.id)
+
+  // Check badge unlocks async — don't block response
+  checkBadgeUnlocks(user.id, stats.total_points + points)
+
+  return res.status(200).json({ success: true, streak: newStreak })
+}
+
+[Claude]: Good. One issue: you're doing three sequential DB round-trips
+(insert event → fetch stats → update stats). Under modest concurrent load that's
+fine, but wrap the stats fetch + update in a Supabase RPC (Postgres function)
+so it's atomic. Otherwise two simultaneous track() calls for the same user could
+race and produce an incorrect points total.
+
+[Builder]: Good catch. Let me write that function.
+
+-- supabase/migrations/001_add_update_user_stats_rpc.sql
+
+CREATE OR REPLACE FUNCTION update_user_stats(
+  p_user_id UUID,
+  p_points INT,
+  p_today DATE
+)
+RETURNS TABLE(new_streak INT, new_total INT) AS $$
+DECLARE
+  v_stats user_stats%ROWTYPE;
+  v_new_streak INT;
+BEGIN
+  SELECT * INTO v_stats FROM user_stats WHERE user_id = p_user_id FOR UPDATE;
+
+  IF v_stats.last_activity_date IS NULL THEN
+    v_new_streak := 1;
+  ELSIF v_stats.last_activity_date = p_today - INTERVAL '1 day' THEN
+    v_new_streak := v_stats.current_streak + 1;
+  ELSIF v_stats.last_activity_date < p_today THEN
+    v_new_streak := 1;
+  ELSE
+    v_new_streak := v_stats.current_streak;
+  END IF;
+
+  UPDATE user_stats SET
+    total_points = v_stats.total_points + p_points,
+    current_streak = v_new_streak,
+    longest_streak = GREATEST(v_stats.longest_streak, v_new_streak),
+    last_activity_date = p_today
+  WHERE user_id = p_user_id;
+
+  RETURN QUERY SELECT v_new_streak, v_stats.total_points + p_points;
+END;
+$$ LANGUAGE plpgsql;
+
+Now the track endpoint calls this single RPC, and Postgres handles the lock.
+
+--- DEBUGGING MOMENT ---
+
+[Builder]: Okay, the streak logic works in isolation but I'm seeing something
+weird in testing. When I hit /api/events/track twice in the same test run, the
+second call is resetting the streak to 1. Let me check...
+
+Oh. I see it. In my test I was calling getPreviousDay(today) but that utility
+function was subtracting 1 day from a string date using string manipulation
+instead of actual Date arithmetic. It was returning "2026-05-28" as
+"2026-05-27" correctly, but for dates like "2026-05-01" it was returning
+"2026-05-00" — which never matched, so streak always reset.
+
+[Claude]: Classic off-by-one from treating date strings as math. Fix:
+
+function getPreviousDay(dateStr: string): string {
+  const d = new Date(dateStr)
+  d.setDate(d.getDate() - 1)
+  return d.toISOString().split('T')[0]
+}
+
+But since you moved this logic into the Postgres RPC using DATE arithmetic,
+this JS function is now dead code. Delete it — the RPC handles it correctly
+with `p_today - INTERVAL '1 day'`.
+
+[Builder]: Right, yep. Deleted. The RPC migration was the fix. Moving on.
+
+--- AI RECOMMENDATIONS ---
+
+[Builder]: Now the part I actually want to think through carefully — the AI
+suggestions endpoint. The naive approach is: hit OpenAI with "here's this user's
+reading history, suggest challenges." That works but it's expensive per request
+and has no caching.
+
+Better approach for MVP:
+  - Pull user's last 10 point events (article reads + completed challenges)
+  - Summarize into a short context string
+  - Hit GPT-4o-mini with a tight prompt
+  - Cache the response in Supabase for 4 hours (keyed by user_id + date)
+  - Return cached if available
+
+// lib/ai/suggestions.ts
+
+import OpenAI from 'openai'
+
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+
+export async function generateSuggestions(userId: string, supabase: any) {
+  // Check cache first
+  const cacheKey = `${userId}_${new Date().toISOString().split('T')[0]}`
+  const { data: cached } = await supabase
+    .from('ai_suggestion_cache')
+    .select('suggestions, cached_at')
+    .eq('cache_key', cacheKey)
+    .single()
+
+  if (cached) {
+    const age = Date.now() - new Date(cached.cached_at).getTime()
+    if (age < 4 * 60 * 60 * 1000) return cached.suggestions
+  }
+
+  // Build context from recent activity
+  const { data: events } = await supabase
+    .from('point_events')
+    .select('event_type, metadata, created_at')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+    .limit(10)
+
+  const context = events.map(e =>
+    `${e.event_type}: ${JSON.stringify(e.metadata)}`
+  ).join('\n')
+
+  const completion = await openai.chat.completions.create({
+    model: 'gpt-4o-mini',
+    messages: [
+      {
+        role: 'system',
+        content: `You are an engagement coach for OutKick, a sports media brand.
+Based on a user's recent activity, suggest 3 short, specific challenges they
+should try today. Each suggestion should be one sentence, actionable, and
+relevant to sports content. Return JSON: { suggestions: string[] }`
+      },
+      {
+        role: 'user',
+        content: `Recent activity:\n${context}`
+      }
+    ],
+    response_format: { type: 'json_object' },
+    temperature: 0.7,
+    max_tokens: 300
+  })
+
+  const parsed = JSON.parse(completion.choices[0].message.content!)
+  const suggestions = parsed.suggestions
+
+  // Upsert cache
+  await supabase.from('ai_suggestion_cache').upsert({
+    cache_key: cacheKey,
+    suggestions,
+    cached_at: new Date().toISOString()
+  })
+
+  return suggestions
+}
+
+[Claude]: The caching pattern is smart — you don't need fresh suggestions on
+every page load. One thing: add error handling around the OpenAI call and return
+a fallback list of static suggestions if it fails. You don't want the dashboard
+to break because of a transient API error.
+
+[Builder]: Agreed. Wrapping in try/catch, returning a static fallback array.
+
+--- LIVE ARTICLES FEED ---
+
+[Builder]: Last piece — top 5 OutKick articles on the leaderboard page. I'll
+poll the RSS feed and parse it server-side. No need for a database table, just
+cache in memory (or edge cache) for 10 minutes.
+
+// pages/api/articles/top.ts
+
+import Parser from 'rss-parser'
+
+const parser = new Parser()
+let cache: { articles: any[]; fetchedAt: number } | null = null
+
+export default async function handler(req, res) {
+  res.setHeader('Cache-Control', 's-maxage=600, stale-while-revalidate')
+
+  if (cache && Date.now() - cache.fetchedAt < 10 * 60 * 1000) {
+    return res.status(200).json(cache.articles)
+  }
+
+  const feed = await parser.parseURL('https://outkick.com/feed/')
+  const articles = feed.items.slice(0, 5).map(item => ({
+    title: item.title,
+    link: item.link,
+    pubDate: item.pubDate,
+    summary: item.contentSnippet?.slice(0, 150),
+  }))
+
+  cache = { articles, fetchedAt: Date.now() }
+  return res.status(200).json(articles)
+}
+
+Simple, works well for MVP. If we move to edge functions later, we'd use
+Vercel's KV or Cloudflare's cache API instead of in-memory.
+
+--- ARCHITECTURE SUMMARY ---
+
+[Builder]: Quick recap of what we built and the tradeoffs made:
+
+Problem solved:
+  OutKick readers bounce after one article visit. We built a loyalty layer that
+  tracks reading behavior, rewards consistency through streaks and points, and
+  uses AI to surface personalized challenges — giving readers a reason to return.
+
+Architecture chosen:
+  - Next.js API routes (fast to ship, co-located with frontend)
+  - Supabase/PostgreSQL for auth + data (row-level security built in)
+  - Append-only event log as source of truth for points
+  - Postgres RPC for atomic stat updates (avoids race conditions)
+  - GPT-4o-mini with 4-hour server-side caching (cost-controlled AI)
+  - RSS polling for live articles (no CMS integration needed at MVP)
+
+Tradeoffs made:
+  - In-memory RSS cache breaks on serverless (each cold start = new instance).
+    Acceptable at MVP traffic levels; replace with Redis/KV later.
+  - No real-time leaderboard — polling every 60 seconds on the client is fine
+    for early users, doesn't justify WebSocket complexity yet.
+  - AI suggestions are generic at low data volume (new users get weak context).
+    This improves naturally as users accumulate history.
+
+Current limitations:
+  - No email notification system (streak reminders would significantly improve
+    retention, but requires transactional email setup)
+  - Badge logic is fully server-checked — no client-side animation hooks yet
+  - AI suggestion quality depends on reading metadata richness; we're only
+    capturing article_id right now, not topics or authors
+  - No admin dashboard UI yet (data exists, just no frontend for it)
+
+Next iteration roadmap:
+  1. Add transactional email (Resend) for streak reminder notifications
+  2. Build admin analytics dashboard (charts for DAU, point distribution,
+     badge conversion rates)
+  3. Enrich article metadata with topic tags so AI suggestions can be more
+     specific ("You read 3 NFL articles this week — try the NFL Draft challenge")
+  4. A/B test challenge types against retention metrics (7-day return rate)
+  5. Explore lightweight widget embed for OutKick article pages to track reads
+     without requiring explicit user navigation to the loyalty portal
+
+The system is designed to stay simple at current scale and has clear upgrade
+paths at each constraint. Nothing was over-engineered for problems we don't
+have yet.
+
+--- SESSION END ---
+================================================================================
