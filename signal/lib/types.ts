@@ -137,3 +137,21 @@ export interface RoadmapItem {
   reason: string; // why this is next for this user
   dependsOn: string[]; // concept ids
 }
+
+// Personalised view of a live signal for one specific role.
+export interface PersonalRelevance {
+  priority: Priority;
+  score: number;
+  reason: string; // "why this matters to you"
+  apply: string; // one concrete prompt for this role
+}
+
+// A TrendingItem that's been through personalisation + short-lesson generation.
+// Enhancement is either LLM-authored (when ANTHROPIC_API_KEY is set) or
+// falls back to templated text keyed off inferred concepts.
+export interface EnhancedTrendingItem extends TrendingItem {
+  whatIsIt: string; // one-paragraph plain-language explainer of the underlying concept
+  keyTakeaways: string[]; // 3 bullets
+  personal: Record<Role, PersonalRelevance>;
+  enhancedBy: "llm" | "template";
+}

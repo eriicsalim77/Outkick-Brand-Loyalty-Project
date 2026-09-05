@@ -18,9 +18,13 @@ npm run dev
 
 Open http://localhost:3000.
 
-Optional: for **live** Trending results, copy `.env.example` to `.env.local`
-and paste your Exa API key. Without a key the Trending section shows a
-curated fallback set.
+Optional: `.env.local` accepts two keys, both graceful.
+
+- `EXA_API_KEY` — pulls live Trending items from the web. Without it,
+  Trending falls back to a curated set.
+- `ANTHROPIC_API_KEY` — Claude Haiku 4.5 writes each live signal's
+  "why this matters" and its short learning card. Without it, both
+  fall back to templated copy keyed off the inferred concepts.
 
 ```bash
 cp .env.example .env.local
@@ -31,10 +35,14 @@ cp .env.example .env.local
 
 1. **Today's Pick** — the one signal, ranked P1 for you, that we think you
    should actually understand today. Plus a small row of secondary picks.
-2. **Trending in your world** — the top 5 developments from the web, ranked
-   by momentum (recency + primary-source weight + Exa's own relevance score),
-   filtered by keyword-matching against the concepts we teach. Refreshes on
-   demand; cached server-side for 15 minutes to control API cost.
+2. **Trending in your world** — the top developments from the web (up to 8
+   for Pro, 3 for Free), each turned into a personalised **learning card**:
+   a P1/P2/P3 tag scored *for your role*, a plain-language "why this matters
+   to you", a short "what is it" explainer, 3 key takeaways, and one concrete
+   "apply it" prompt. Rendered on a dedicated `/live/[id]` page. Written by
+   Claude Haiku 4.5 when `ANTHROPIC_API_KEY` is set, or by templates otherwise.
+   Ranked by momentum (recency + primary-source weight + Exa's relevance).
+   Refreshes on demand; cached server-side for 15 minutes.
 3. **Your Roadmap** — the next 3 concepts to learn, ordered by prerequisite
    depth and boosted by (a) what you flagged as "want to learn" and (b)
    which concepts today's P1 signals touch. Every item links to the lesson

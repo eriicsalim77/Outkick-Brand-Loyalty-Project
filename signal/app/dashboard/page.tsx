@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { LiveHeroCard } from "@/components/LiveHeroCard";
 import { Nav } from "@/components/Nav";
 import { PriorityBadge } from "@/components/PriorityBadge";
 import { ProfileSummary } from "@/components/ProfileSummary";
@@ -13,12 +14,13 @@ import { SIGNALS } from "@/data/signals";
 import { prioritise } from "@/lib/prioritize";
 import { buildRoadmap } from "@/lib/roadmap";
 import { loadProfile, loadProgress } from "@/lib/storage";
-import type { Profile, Progress } from "@/lib/types";
+import type { EnhancedTrendingItem, Profile, Progress } from "@/lib/types";
 
 export default function Dashboard() {
   const router = useRouter();
   const [profile, setProfile] = useState<Profile | null>(null);
   const [progress, setProgress] = useState<Progress | null>(null);
+  const [liveItems, setLiveItems] = useState<EnhancedTrendingItem[]>([]);
 
   useEffect(() => {
     const p = loadProfile();
@@ -30,14 +32,29 @@ export default function Dashboard() {
     setProgress(loadProgress());
   }, [router]);
 
-  const rows = useMemo(() => {
+  const curatedRows = useMemo(() => {
     if (!profile || !progress) return [];
     return prioritise(SIGNALS, profile, progress);
   }, [profile, progress]);
 
-  const hero = rows.find((r) => r.computed.priority === "P1") ?? rows[0];
-  const otherPicks = rows
-    .filter((r) => r !== hero && r.computed.priority !== "P3")
+  // Today's Pick: whichever ranks higher between the top live item and the
+  // top curated signal for this user. Both go through role-aware scoring
+  // so we're comparing apples to apples.
+  const heroLive = liveItems[0] ?? null;
+  const heroCurated = curatedRows[0] ?? null;
+
+  const useLiveHero = (() => {
+    if (!heroLive) return false;
+    if (!heroCurated) return true;
+    const liveScore = profile ? heroLive.personal[profile.role].score : 0;
+    const curatedScore = heroCurated.computed.score;
+    // Prefer live when it's within 8 pts of the curated score — freshness wins.
+    return liveScore + 8 >= curatedScore;
+  })();
+
+  const otherPicks = curatedRows
+    .filter((r) => r !== heroCurated || useLiveHero)
+    .filter((r) => r.computed.priority !== "P3")
     .slice(0, 4);
 
   const roadmap = useMemo(() => {
@@ -45,14 +62,13 @@ export default function Dashboard() {
     return buildRoadmap(profile, progress, 3);
   }, [profile, progress]);
 
-  if (!profile || !progress || !hero) return null;
+  if (!profile || !progress) return null;
 
   return (
     <div>
       <Nav />
 
       <main className="mx-auto max-w-5xl px-6 py-8">
-        {/* header row: profile + streak */}
         <div className="grid gap-4 sm:grid-cols-3">
           <div className="sm:col-span-2">
             <ProfileSummary profile={profile} />
@@ -83,11 +99,23 @@ export default function Dashboard() {
               </h2>
             </div>
             <p className="text-sm text-ink-muted">
-              We scanned {SIGNALS.length} developments. This is the one for you.
+              Ranked across {liveItems.length} live + {SIGNALS.length} curated signals.
             </p>
           </div>
 
-          <SignalCard signal={hero.signal} computed={hero.computed} hero />
+          {useLiveHero && heroLive ? (
+            <LiveHeroCard item={heroLive} role={profile.role} />
+          ) : heroCurated ? (
+            <SignalCard
+              signal={heroCurated.signal}
+              computed={heroCurated.computed}
+              hero
+            />
+          ) : (
+            <div className="rounded-2xl border border-dashed border-black/10 bg-white p-8 text-ink-muted">
+              Loading today's pick…
+            </div>
+          )}
 
           {otherPicks.length > 0 && (
             <div className="mt-6">
@@ -108,9 +136,9 @@ export default function Dashboard() {
           )}
         </section>
 
-        {/* Section 2: Trending — live via Exa */}
+        {/* Section 2: Trending — live via Exa, learning-card-per-item */}
         <section className="mt-12">
-          <TrendingList role={profile.role} />
+          <TrendingList role={profile.role} onItems={setLiveItems} />
         </section>
 
         {/* Section 3: Roadmap */}
