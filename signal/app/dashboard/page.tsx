@@ -6,12 +6,12 @@ import { useRouter } from "next/navigation";
 import { Nav } from "@/components/Nav";
 import { PriorityBadge } from "@/components/PriorityBadge";
 import { ProfileSummary } from "@/components/ProfileSummary";
+import { RoadmapCard } from "@/components/RoadmapCard";
 import { SignalCard } from "@/components/SignalCard";
-import { CONCEPTS_BY_ID } from "@/data/concepts";
+import { TrendingList } from "@/components/TrendingList";
 import { SIGNALS } from "@/data/signals";
-import { LESSONS } from "@/data/lessons";
-import { nextBestConcept, statusForScore } from "@/lib/knowledge";
 import { prioritise } from "@/lib/prioritize";
+import { buildRoadmap } from "@/lib/roadmap";
 import { loadProfile, loadProgress } from "@/lib/storage";
 import type { Profile, Progress } from "@/lib/types";
 
@@ -35,39 +35,24 @@ export default function Dashboard() {
     return prioritise(SIGNALS, profile, progress);
   }, [profile, progress]);
 
-  const p1 = rows.filter((r) => r.computed.priority === "P1");
-  const p2 = rows.filter((r) => r.computed.priority === "P2");
-  const p3 = rows.filter((r) => r.computed.priority === "P3");
+  const hero = rows.find((r) => r.computed.priority === "P1") ?? rows[0];
+  const otherPicks = rows
+    .filter((r) => r !== hero && r.computed.priority !== "P3")
+    .slice(0, 4);
 
-  const conceptPool = useMemo(
-    () => LESSONS.flatMap((l) => l.conceptsTaught),
-    [],
-  );
+  const roadmap = useMemo(() => {
+    if (!profile || !progress) return [];
+    return buildRoadmap(profile, progress, 3);
+  }, [profile, progress]);
 
-  const nextConceptId = useMemo(() => {
-    if (!profile || !progress) return null;
-    return nextBestConcept(progress, profile, conceptPool);
-  }, [profile, progress, conceptPool]);
-
-  const nextLesson = useMemo(() => {
-    if (!nextConceptId) return null;
-    return (
-      LESSONS.find((l) =>
-        l.conceptsTaught.includes(nextConceptId),
-      ) ?? null
-    );
-  }, [nextConceptId]);
-
-  if (!profile || !progress) return null;
-
-  const totalSignals = SIGNALS.length;
-  const shown = p1.length + p2.length + p3.length;
+  if (!profile || !progress || !hero) return null;
 
   return (
     <div>
       <Nav />
 
       <main className="mx-auto max-w-5xl px-6 py-8">
+        {/* header row: profile + streak */}
         <div className="grid gap-4 sm:grid-cols-3">
           <div className="sm:col-span-2">
             <ProfileSummary profile={profile} />
@@ -86,41 +71,32 @@ export default function Dashboard() {
           </div>
         </div>
 
+        {/* Section 1: Today's Pick */}
         <section className="mt-10">
-          <div className="mb-6 flex items-baseline justify-between">
-            <h2 className="text-2xl font-semibold tracking-tight">
-              Today's signals
-            </h2>
+          <div className="mb-4 flex items-baseline justify-between">
+            <div>
+              <div className="text-[11px] font-medium uppercase tracking-widest text-ink-muted">
+                Today's pick
+              </div>
+              <h2 className="mt-1 text-2xl font-semibold tracking-tight">
+                Start here
+              </h2>
+            </div>
             <p className="text-sm text-ink-muted">
-              We scanned {totalSignals} developments. Filtered to {shown} for you.
+              We scanned {SIGNALS.length} developments. This is the one for you.
             </p>
           </div>
 
-          {p1.length > 0 && (
-            <div className="mb-8 space-y-4">
-              <div className="flex items-center gap-2">
-                <PriorityBadge priority="P1" />
-                <div className="text-xs text-ink-muted">Start here</div>
-              </div>
-              {p1.map((r, i) => (
-                <SignalCard
-                  key={r.signal.id}
-                  signal={r.signal}
-                  computed={r.computed}
-                  hero={i === 0}
-                />
-              ))}
-            </div>
-          )}
+          <SignalCard signal={hero.signal} computed={hero.computed} hero />
 
-          {p2.length > 0 && (
-            <div className="mb-8 space-y-4">
-              <div className="flex items-center gap-2">
+          {otherPicks.length > 0 && (
+            <div className="mt-6">
+              <div className="mb-3 flex items-center gap-2">
                 <PriorityBadge priority="P2" />
-                <div className="text-xs text-ink-muted">Useful context</div>
+                <div className="text-xs text-ink-muted">Also worth your time</div>
               </div>
               <div className="grid gap-4 md:grid-cols-2">
-                {p2.map((r) => (
+                {otherPicks.map((r) => (
                   <SignalCard
                     key={r.signal.id}
                     signal={r.signal}
@@ -130,81 +106,23 @@ export default function Dashboard() {
               </div>
             </div>
           )}
-
-          {p3.length > 0 && (
-            <div className="mb-8">
-              <div className="mb-3 flex items-center gap-2">
-                <PriorityBadge priority="P3" />
-                <div className="text-xs text-ink-muted">
-                  Awareness — safe to skip
-                </div>
-              </div>
-              <div className="grid gap-3 md:grid-cols-2">
-                {p3.map((r) => (
-                  <Link
-                    key={r.signal.id}
-                    href={`/signals/${r.signal.id}`}
-                    className="block rounded-xl border border-black/5 bg-white p-4 text-sm shadow-card hover:border-ink/20"
-                  >
-                    <div className="font-medium text-ink">{r.signal.title}</div>
-                    <div className="mt-1 text-xs text-ink-muted">
-                      {r.signal.minutesToRead} min · {r.signal.category}
-                    </div>
-                  </Link>
-                ))}
-              </div>
-            </div>
-          )}
         </section>
 
-        {nextConceptId && nextLesson && (
-          <section className="mt-6 rounded-3xl border border-black/5 bg-white p-8 shadow-hero">
-            <div className="grid gap-8 md:grid-cols-3">
-              <div className="md:col-span-2">
-                <div className="text-[11px] font-medium uppercase tracking-widest text-ink-muted">
-                  Next best thing to learn
-                </div>
-                <h3 className="mt-2 text-2xl font-semibold tracking-tight">
-                  {CONCEPTS_BY_ID[nextConceptId]?.name}
-                </h3>
-                <p className="mt-2 text-ink-muted">
-                  {CONCEPTS_BY_ID[nextConceptId]?.blurb}
-                </p>
-                <p className="mt-3 text-sm text-ink-muted">
-                  We picked this because it{" "}
-                  {(CONCEPTS_BY_ID[nextConceptId]?.prerequisites ?? []).length
-                    ? "sits at a foundation of concepts you want to learn."
-                    : "opens up several other topics you've flagged."}
-                </p>
-                <Link
-                  href={`/lessons/${nextLesson.id}`}
-                  className="mt-5 inline-flex rounded-full bg-ink px-4 py-2 text-sm font-medium text-paper"
-                >
-                  Start the lesson
-                </Link>
-              </div>
-              <div className="rounded-2xl bg-paper-soft p-5">
-                <div className="text-xs font-medium uppercase tracking-widest text-ink-muted">
-                  You'll learn
-                </div>
-                <ul className="mt-3 space-y-2 text-sm text-ink">
-                  {nextLesson.conceptsTaught.map((cid) => {
-                    const c = CONCEPTS_BY_ID[cid];
-                    const k = progress.knowledge[cid];
-                    return (
-                      <li key={cid} className="flex items-baseline justify-between">
-                        <span>{c?.name ?? cid}</span>
-                        <span className="text-xs text-ink-muted">
-                          {statusForScore(k?.score ?? 0)}
-                        </span>
-                      </li>
-                    );
-                  })}
-                </ul>
-              </div>
-            </div>
-          </section>
-        )}
+        {/* Section 2: Trending — live via Exa */}
+        <section className="mt-12">
+          <TrendingList role={profile.role} />
+        </section>
+
+        {/* Section 3: Roadmap */}
+        <section className="mt-12">
+          <RoadmapCard items={roadmap} progress={progress} />
+        </section>
+
+        <div className="mt-10 flex items-center justify-center text-xs text-ink-muted">
+          <Link href="/knowledge" className="hover:text-ink">
+            Open your knowledge map →
+          </Link>
+        </div>
       </main>
     </div>
   );

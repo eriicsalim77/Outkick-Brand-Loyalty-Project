@@ -1,25 +1,16 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { KnowledgeGraph } from "@/components/KnowledgeGraph";
 import { Nav } from "@/components/Nav";
 import { ProfileSummary } from "@/components/ProfileSummary";
-import { CONCEPTS, CONCEPTS_BY_ID } from "@/data/concepts";
-import { LESSONS } from "@/data/lessons";
-import { nextBestConcept, statusForScore } from "@/lib/knowledge";
+import { RoadmapCard } from "@/components/RoadmapCard";
+import { CONCEPTS } from "@/data/concepts";
+import { buildRoadmap } from "@/lib/roadmap";
 import { loadProfile, loadProgress } from "@/lib/storage";
-import type { ConfidenceStatus, Profile, Progress } from "@/lib/types";
-
-const STATUS_STYLES: Record<
-  ConfidenceStatus,
-  { dot: string; label: string; text: string }
-> = {
-  strong: { dot: "bg-emerald-500", label: "Strong", text: "text-emerald-700" },
-  developing: { dot: "bg-amber-500", label: "Developing", text: "text-amber-700" },
-  attention: { dot: "bg-signal-p1", label: "Needs attention", text: "text-signal-p1" },
-  unknown: { dot: "bg-black/20", label: "Not started", text: "text-ink-muted" },
-};
+import type { Profile, Progress } from "@/lib/types";
 
 export default function Knowledge() {
   const router = useRouter();
@@ -36,124 +27,89 @@ export default function Knowledge() {
     setProgress(loadProgress());
   }, [router]);
 
-  const conceptPool = useMemo(
-    () => LESSONS.flatMap((l) => l.conceptsTaught),
-    [],
-  );
-
-  const nextConceptId = useMemo(() => {
-    if (!profile || !progress) return null;
-    return nextBestConcept(progress, profile, conceptPool);
-  }, [profile, progress, conceptPool]);
+  const roadmap = useMemo(() => {
+    if (!profile || !progress) return [];
+    return buildRoadmap(profile, progress, 5);
+  }, [profile, progress]);
 
   if (!profile || !progress) return null;
 
-  const byCategory: Record<string, typeof CONCEPTS> = {};
-  for (const c of CONCEPTS) {
-    (byCategory[c.category] ??= []).push(c);
-  }
-
   const total = CONCEPTS.length;
-  const known = Object.values(progress.knowledge).filter((k) => k.score >= 65).length;
+  const strong = Object.values(progress.knowledge).filter((k) => k.score >= 65).length;
   const developing = Object.values(progress.knowledge).filter(
     (k) => k.score >= 40 && k.score < 65,
   ).length;
+  const attention = Object.values(progress.knowledge).filter(
+    (k) => k.score > 0 && k.score < 40,
+  ).length;
+  const untouched = total - strong - developing - attention;
 
   return (
     <div>
       <Nav />
 
-      <main className="mx-auto max-w-5xl px-6 py-8">
-        <div className="grid gap-4 sm:grid-cols-3">
-          <div className="sm:col-span-2">
+      <main className="mx-auto max-w-6xl px-6 py-8">
+        <div className="grid gap-4 md:grid-cols-4">
+          <div className="md:col-span-2">
             <ProfileSummary profile={profile} />
           </div>
-          <div className="rounded-2xl border border-black/5 bg-white p-5 shadow-card">
+          <StatTile label="Strong" value={strong} accent="text-emerald-600" />
+          <StatTile label="Developing" value={developing} accent="text-amber-600" />
+        </div>
+
+        <div className="mt-4 grid gap-4 md:grid-cols-4">
+          <StatTile label="Needs attention" value={attention} accent="text-signal-p1" />
+          <StatTile label="Not started" value={untouched} accent="text-ink-muted" />
+          <div className="md:col-span-2 rounded-2xl border border-black/5 bg-white p-5 shadow-card">
             <div className="text-[11px] font-medium uppercase tracking-widest text-ink-muted">
               Progress
             </div>
-            <div className="mt-1 text-lg font-semibold">
-              {known} strong · {developing} developing
+            <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-black/5">
+              <div
+                className="h-full rounded-full bg-signal-accent transition-all"
+                style={{ width: `${Math.round((strong / total) * 100)}%` }}
+              />
             </div>
-            <div className="text-sm text-ink-muted">
-              of {total} tracked concepts
+            <div className="mt-2 text-xs text-ink-muted">
+              {strong}/{total} concepts at strong ·{" "}
+              {Math.round((strong / total) * 100)}% of the tracked graph
             </div>
           </div>
         </div>
 
-        {nextConceptId && (
-          <section className="mt-8 rounded-2xl border border-signal-accent/20 bg-signal-accent/5 p-5">
-            <div className="text-[11px] font-medium uppercase tracking-widest text-signal-accent">
-              Next best thing to learn
-            </div>
-            <div className="mt-1 flex items-baseline justify-between gap-4">
-              <div>
-                <div className="text-lg font-semibold text-ink">
-                  {CONCEPTS_BY_ID[nextConceptId]?.name}
-                </div>
-                <div className="text-sm text-ink-muted">
-                  {CONCEPTS_BY_ID[nextConceptId]?.blurb}
-                </div>
-              </div>
-              <Link
-                href="/dashboard"
-                className="rounded-full bg-ink px-4 py-2 text-sm font-medium text-paper"
-              >
-                Learn it
-              </Link>
-            </div>
-          </section>
-        )}
-
-        <section className="mt-10 space-y-10">
-          {Object.entries(byCategory).map(([category, concepts]) => (
-            <div key={category}>
-              <h2 className="mb-4 text-lg font-semibold tracking-tight">
-                {category}
-              </h2>
-              <div className="grid gap-3 md:grid-cols-2">
-                {concepts.map((c) => {
-                  const k = progress.knowledge[c.id];
-                  const score = k?.score ?? 0;
-                  const status = statusForScore(score);
-                  const style = STATUS_STYLES[status];
-                  const prereqs = (c.prerequisites ?? []).map(
-                    (pid) => CONCEPTS_BY_ID[pid]?.name ?? pid,
-                  );
-                  return (
-                    <div
-                      key={c.id}
-                      className="rounded-2xl border border-black/5 bg-white p-5 shadow-card"
-                    >
-                      <div className="flex items-baseline justify-between gap-4">
-                        <div className="font-semibold text-ink">{c.name}</div>
-                        <div className={`flex items-center gap-2 text-xs ${style.text}`}>
-                          <span className={`inline-block h-1.5 w-1.5 rounded-full ${style.dot}`} />
-                          {style.label}
-                        </div>
-                      </div>
-                      <div className="mt-1 text-sm text-ink-muted">
-                        {c.blurb}
-                      </div>
-                      <div className="mt-3 h-1 w-full overflow-hidden rounded-full bg-black/5">
-                        <div
-                          className="h-full rounded-full bg-signal-accent"
-                          style={{ width: `${score}%` }}
-                        />
-                      </div>
-                      {prereqs.length > 0 && (
-                        <div className="mt-3 text-xs text-ink-muted">
-                          Builds on: {prereqs.join(", ")}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          ))}
+        <section className="mt-8">
+          <KnowledgeGraph progress={progress} />
         </section>
+
+        <section className="mt-10">
+          <RoadmapCard items={roadmap} progress={progress} />
+        </section>
+
+        <div className="mt-10 flex items-center justify-center text-xs text-ink-muted">
+          <Link href="/dashboard" className="hover:text-ink">
+            ← Back to today
+          </Link>
+        </div>
       </main>
+    </div>
+  );
+}
+
+function StatTile({
+  label,
+  value,
+  accent,
+}: {
+  label: string;
+  value: number;
+  accent: string;
+}) {
+  return (
+    <div className="rounded-2xl border border-black/5 bg-white p-5 shadow-card">
+      <div className="text-[11px] font-medium uppercase tracking-widest text-ink-muted">
+        {label}
+      </div>
+      <div className={`mt-1 text-2xl font-semibold ${accent}`}>{value}</div>
     </div>
   );
 }

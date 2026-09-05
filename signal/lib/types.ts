@@ -116,3 +116,24 @@ export type ComputedPriority = {
   score: number;
   reason: string;
 };
+
+// Lighter-weight than a Signal — a trending item pulled from Exa (or a
+// hand-authored fallback). No lesson attached; primary CTA is "read source".
+export interface TrendingItem {
+  id: string;
+  title: string;
+  snippet: string;
+  url: string;
+  publisher: string;
+  publishedAt: string; // YYYY-MM-DD
+  technologies: string[]; // concept ids inferred by keyword match
+  momentum: number; // 0..100 — combined recency + domain weight + Exa score
+  tier: SourceTier;
+}
+
+export interface RoadmapItem {
+  conceptId: string;
+  lessonId: string | null; // null when the concept has no lesson yet
+  reason: string; // why this is next for this user
+  dependsOn: string[]; // concept ids
+}
