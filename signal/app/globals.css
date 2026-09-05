@@ -1,0 +1,26 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+html, body {
+  background: #FAFAF7;
+  color: #0B0D12;
+  font-feature-settings: "ss01", "cv11";
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* subtle grid used behind the hero P1 card */
+.hero-grid {
+  background-image:
+    radial-gradient(circle at 20% 20%, rgba(59,91,255,0.06), transparent 40%),
+    radial-gradient(circle at 80% 30%, rgba(225,75,75,0.05), transparent 40%);
+}
+
+.prose-signal p {
+  line-height: 1.65;
+}

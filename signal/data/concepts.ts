@@ -1,0 +1,142 @@
+import type { Concept } from "@/lib/types";
+
+export const CONCEPTS: Concept[] = [
+  {
+    id: "llm",
+    name: "LLMs",
+    category: "AI",
+    blurb: "Large language models — the neural networks behind modern AI assistants.",
+  },
+  {
+    id: "inference",
+    name: "Inference",
+    category: "AI",
+    prerequisites: ["llm"],
+    blurb: "Running a trained model to produce outputs. Where cost and latency live.",
+  },
+  {
+    id: "embeddings",
+    name: "Embeddings",
+    category: "AI",
+    prerequisites: ["llm"],
+    blurb: "Numeric representations of text used to measure semantic similarity.",
+  },
+  {
+    id: "rag",
+    name: "Retrieval-Augmented Generation",
+    category: "AI",
+    prerequisites: ["llm", "embeddings"],
+    blurb: "Fetching relevant context from a data store and feeding it to an LLM at query time.",
+  },
+  {
+    id: "tool-calling",
+    name: "Tool Calling",
+    category: "AI",
+    prerequisites: ["llm"],
+    blurb: "Letting an LLM call functions or APIs so it can act, not just answer.",
+  },
+  {
+    id: "agents",
+    name: "AI Agents",
+    category: "AI",
+    prerequisites: ["tool-calling"],
+    blurb: "Systems that loop: plan → call tools → observe → decide → repeat until a goal is met.",
+  },
+  {
+    id: "mcp",
+    name: "MCP (Model Context Protocol)",
+    category: "AI",
+    prerequisites: ["tool-calling"],
+    blurb: "An open protocol for connecting LLM apps to external tools and data sources.",
+  },
+  {
+    id: "mcp-server",
+    name: "MCP Servers",
+    category: "AI",
+    prerequisites: ["mcp"],
+    blurb: "Small servers that expose a system's data or actions to any MCP-compatible AI client.",
+  },
+  {
+    id: "prompt-caching",
+    name: "Prompt Caching",
+    category: "AI",
+    prerequisites: ["inference"],
+    blurb: "Reusing the model's work on a repeated prompt prefix to cut cost and latency.",
+  },
+  {
+    id: "vector-db",
+    name: "Vector Databases",
+    category: "AI",
+    prerequisites: ["embeddings"],
+    blurb: "Databases specialized for similarity search over embeddings.",
+  },
+  {
+    id: "api",
+    name: "APIs",
+    category: "Engineering",
+    blurb: "Programmatic interfaces one system exposes so others can call it.",
+  },
+  {
+    id: "sdk",
+    name: "SDKs",
+    category: "Engineering",
+    prerequisites: ["api"],
+    blurb: "Language-specific libraries that wrap an API in idiomatic code.",
+  },
+  {
+    id: "webhook",
+    name: "Webhooks",
+    category: "Engineering",
+    prerequisites: ["api"],
+    blurb: "HTTP callbacks a system fires to notify another when something happened.",
+  },
+  {
+    id: "crm",
+    name: "CRM Systems",
+    category: "GTM",
+    blurb: "Systems of record for customer data — Salesforce, HubSpot, etc.",
+  },
+  {
+    id: "gtm-tooling",
+    name: "GTM Tooling",
+    category: "GTM",
+    blurb: "The stack revenue teams run on: enrichment, sequencing, routing, forecasting.",
+  },
+  {
+    id: "workflow-automation",
+    name: "Workflow Automation",
+    category: "GTM",
+    blurb: "Tools that chain triggers and actions across systems without custom code.",
+  },
+  {
+    id: "data-warehouse",
+    name: "Data Warehouses",
+    category: "Data",
+    blurb: "Central column-store databases that power analytics — Snowflake, BigQuery, Databricks.",
+  },
+  {
+    id: "reverse-etl",
+    name: "Reverse ETL",
+    category: "Data",
+    prerequisites: ["data-warehouse"],
+    blurb: "Sending warehouse data back into operational tools like CRM and marketing.",
+  },
+  {
+    id: "eval",
+    name: "LLM Evals",
+    category: "AI",
+    prerequisites: ["llm"],
+    blurb: "Systematic testing of an LLM system's outputs against expected behavior.",
+  },
+  {
+    id: "computer-use",
+    name: "Computer Use",
+    category: "AI",
+    prerequisites: ["agents"],
+    blurb: "Models that operate a computer directly — click, type, read the screen.",
+  },
+];
+
+export const CONCEPTS_BY_ID: Record<string, Concept> = Object.fromEntries(
+  CONCEPTS.map((c) => [c.id, c]),
+);
