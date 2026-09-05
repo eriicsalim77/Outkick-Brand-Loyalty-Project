@@ -60,7 +60,7 @@ async function fetchFromExa(role: Role): Promise<TrendingItem[]> {
       if (it) items.push(it);
     }
   }
-  return rank(dedupe(items), 5);
+  return rank(dedupe(items), 8);
 }
 
 export async function GET(req: Request) {
@@ -81,7 +81,7 @@ export async function GET(req: Request) {
   }
 
   if (!hasExaKey()) {
-    const items = rank(TRENDING_FALLBACK, 5);
+    const items = rank(TRENDING_FALLBACK, 8);
     CACHE.set(key, { at: Date.now(), items, source: "fallback" });
     return NextResponse.json(
       { items, source: "fallback", cachedAt: Date.now() },
@@ -92,7 +92,7 @@ export async function GET(req: Request) {
   try {
     const items = await fetchFromExa(role);
     if (items.length === 0) {
-      const fb = rank(TRENDING_FALLBACK, 5);
+      const fb = rank(TRENDING_FALLBACK, 8);
       CACHE.set(key, { at: Date.now(), items: fb, source: "fallback" });
       return NextResponse.json(
         { items: fb, source: "fallback", cachedAt: Date.now(), note: "Exa returned no classifiable results." },
@@ -105,7 +105,7 @@ export async function GET(req: Request) {
       { headers: { "cache-control": "no-store" } },
     );
   } catch (err) {
-    const fb = rank(TRENDING_FALLBACK, 5);
+    const fb = rank(TRENDING_FALLBACK, 8);
     CACHE.set(key, { at: Date.now(), items: fb, source: "fallback" });
     return NextResponse.json(
       {

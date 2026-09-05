@@ -63,6 +63,42 @@ export const TRENDING_FALLBACK: TrendingItem[] = [
     momentum: 76,
     tier: 1,
   },
+  {
+    id: "t-anthropic-prompt-cache-ga",
+    title: "Prompt Caching on the Claude API now generally available",
+    snippet:
+      "Anthropic moves Prompt Caching to GA with expanded model coverage and clearer billing telemetry.",
+    url: "https://www.anthropic.com/news/prompt-caching",
+    publisher: "Anthropic",
+    publishedAt: isoDaysAgo(7),
+    technologies: ["prompt-caching", "inference", "api"],
+    momentum: 72,
+    tier: 1,
+  },
+  {
+    id: "t-cursor-agents",
+    title: "Cursor ships background agents for long-running tasks",
+    snippet:
+      "Cursor introduces background agents that run in a sandboxed environment and open PRs when finished, targeting engineering teams.",
+    url: "https://www.cursor.com/",
+    publisher: "Cursor",
+    publishedAt: isoDaysAgo(9),
+    technologies: ["agents", "tool-calling"],
+    momentum: 68,
+    tier: 1,
+  },
+  {
+    id: "t-snowflake-cortex-agents",
+    title: "Snowflake extends Cortex with agent-shaped SQL functions",
+    snippet:
+      "New Cortex primitives let agents call SQL functions and query warehouse data without leaving the Snowflake perimeter.",
+    url: "https://www.snowflake.com/en/data-cloud/cortex/",
+    publisher: "Snowflake",
+    publishedAt: isoDaysAgo(10),
+    technologies: ["agents", "rag", "data-warehouse"],
+    momentum: 65,
+    tier: 1,
+  },
 ];
 
 function isoDaysAgo(n: number): string {

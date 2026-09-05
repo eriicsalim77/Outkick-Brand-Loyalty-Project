@@ -120,10 +120,57 @@ the concept graph in `data/concepts.ts` lets both the knowledge map and
 the roadmap suggest the right prerequisite next — Tool Calling before MCP,
 Embeddings before RAG.
 
+## Freemium (Pro tier)
+
+The UI + gating layer for the paywall is in place. The RevenueCat Web SDK
+is **not** wired yet — you asked for UI-only for now — but every gate in the
+app reads through a single entitlement module so the swap is one file.
+
+### What Pro unlocks
+
+- Full Trending feed (Free = top 3, Pro = full ranked list of 8).
+- Deeper roadmap (planned — currently both tiers see next 3).
+- Faster refresh cadence on Trending (planned).
+- Export briefings (planned).
+
+### How the gate works today
+
+- `lib/entitlements.ts` — `isPro()`, `grantPro()`, `revokePro()`,
+  `useIsPro()` hook. Reads a `signal.entitlement.pro.v1` flag in
+  localStorage. Every gate goes through this — no other file touches the
+  flag directly.
+- `/upgrade` — pricing page with a **dev-only** simulate-purchase button
+  that flips the flag. Also has "Force Pro on / off" for testing.
+- `Nav` shows an **Upgrade** chip for free users and a **Pro** chip for
+  Pro users.
+- `TrendingList` shows the first 3 items to free users, then a blurred
+  preview of the rest with an Upgrade CTA.
+
+### Swapping in RevenueCat (later, ~an afternoon)
+
+1. `npm install @revenuecat/purchases-js`
+2. Create a RevenueCat project → Web Billing app → one entitlement `pro`
+   → one product `pro_monthly` (linked to the entitlement).
+3. Drop the Web Billing public key into `.env.local`
+   (`NEXT_PUBLIC_RC_WEB_KEY=rcb_...`).
+4. In `lib/entitlements.ts`:
+   ```ts
+   import { Purchases } from "@revenuecat/purchases-js";
+   // configure once on the client, using getOrCreateAppUserId() as the id
+   // isPro() -> Purchases.getSharedInstance().getCustomerInfo() -> entitlements.active["pro"] != null
+   ```
+5. In `/upgrade`, replace `grantPro()` with
+   `Purchases.getSharedInstance().purchase({ packageIdentifier: "pro_monthly" })`.
+
+Nothing else in the app changes — `useIsPro()` still drives every gate.
+When you add real auth later, call `Purchases.getSharedInstance().logIn(realUserId)`
+to migrate entitlements from the anonymous id.
+
 ## What's next (open threads)
 
-- **Auth + RevenueCat paywall** for freemium (deferred by design — needs
-  Supabase Auth + RC Web Billing + Stripe accounts).
+- **RevenueCat wiring** — see above; needs RC + Stripe accounts.
+- **Auth** — Supabase / Clerk / your choice; slot it in where
+  `getOrCreateAppUserId()` lives so entitlements migrate on `logIn()`.
 - **LLM summarisation** of Exa results for a nicer "why this matters" on
   live items. `lib/ingest.ts` is the single hook.
 - **Personalised trending** — fold the user's `wantsToLearn` list into the

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { Logo } from "./Logo";
+import { useIsPro } from "@/lib/entitlements";
 import { clearProfile } from "@/lib/storage";
 
 const tabs = [
@@ -13,6 +14,7 @@ const tabs = [
 export function Nav() {
   const pathname = usePathname();
   const router = useRouter();
+  const pro = useIsPro();
 
   return (
     <nav className="sticky top-0 z-10 border-b border-black/5 bg-paper/85 backdrop-blur">
@@ -38,6 +40,22 @@ export function Nav() {
               </Link>
             );
           })}
+          {pro ? (
+            <Link
+              href="/upgrade"
+              className="ml-1 inline-flex items-center gap-1 rounded-full bg-signal-accent/10 px-2.5 py-1 text-xs font-medium text-signal-accent"
+            >
+              <span className="inline-block h-1.5 w-1.5 rounded-full bg-signal-accent" />
+              Pro
+            </Link>
+          ) : (
+            <Link
+              href="/upgrade"
+              className="ml-1 rounded-full border border-black/10 px-3 py-1.5 text-xs font-medium text-ink hover:border-ink"
+            >
+              Upgrade
+            </Link>
+          )}
           <button
             onClick={() => {
               clearProfile();

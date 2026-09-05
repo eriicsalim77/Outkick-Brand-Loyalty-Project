@@ -1,9 +1,13 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { CONCEPTS_BY_ID } from "@/data/concepts";
+import { useIsPro } from "@/lib/entitlements";
 import { formatDate } from "@/lib/format";
 import type { Role, TrendingItem } from "@/lib/types";
+
+const FREE_LIMIT = 3;
 
 interface Response {
   items: TrendingItem[];
@@ -17,6 +21,7 @@ export function TrendingList({ role }: { role: Role }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const pro = useIsPro();
 
   async function load(bypass = false) {
     try {
@@ -90,51 +95,94 @@ export function TrendingList({ role }: { role: Role }) {
       )}
 
       {data && data.items.length > 0 && (
-        <ol className="mt-6 divide-y divide-black/5">
-          {data.items.map((it, i) => (
-            <li key={it.id} className="py-4 first:pt-0 last:pb-0">
-              <a
-                href={it.url}
-                target="_blank"
-                rel="noreferrer"
-                className="group grid grid-cols-[auto_1fr_auto] items-start gap-4"
+        <>
+          <ol className="mt-6 divide-y divide-black/5">
+            {(pro ? data.items : data.items.slice(0, FREE_LIMIT)).map((it, i) => (
+              <li key={it.id} className="py-4 first:pt-0 last:pb-0">
+                <a
+                  href={it.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="group grid grid-cols-[auto_1fr_auto] items-start gap-4"
+                >
+                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-paper-soft text-xs font-semibold text-ink-muted group-hover:bg-ink group-hover:text-paper">
+                    {i + 1}
+                  </div>
+                  <div className="min-w-0">
+                    <div className="font-medium text-ink group-hover:underline">
+                      {it.title}
+                    </div>
+                    <div className="mt-1 line-clamp-2 text-sm text-ink-muted">
+                      {it.snippet}
+                    </div>
+                    <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-ink-muted">
+                      <span>{it.publisher}</span>
+                      <span>·</span>
+                      <span>{formatDate(it.publishedAt)}</span>
+                      {it.technologies.slice(0, 3).map((t) => (
+                        <span
+                          key={t}
+                          className="rounded-full bg-paper-soft px-2 py-0.5 text-[11px] text-ink"
+                        >
+                          {CONCEPTS_BY_ID[t]?.name ?? t}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-xs font-medium text-ink-muted">
+                      Momentum
+                    </div>
+                    <div className="text-xl font-semibold text-ink">
+                      {it.momentum}
+                    </div>
+                  </div>
+                </a>
+              </li>
+            ))}
+          </ol>
+
+          {!pro && data.items.length > FREE_LIMIT && (
+            <div className="relative mt-4 overflow-hidden rounded-2xl border border-dashed border-black/15 bg-paper-soft p-6">
+              {/* blurred preview of what's behind the paywall */}
+              <div
+                aria-hidden
+                className="pointer-events-none select-none space-y-3 opacity-40 blur-[3px]"
               >
-                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-paper-soft text-xs font-semibold text-ink-muted group-hover:bg-ink group-hover:text-paper">
-                  {i + 1}
-                </div>
-                <div className="min-w-0">
-                  <div className="font-medium text-ink group-hover:underline">
-                    {it.title}
+                {data.items.slice(FREE_LIMIT).map((it, i) => (
+                  <div key={it.id} className="grid grid-cols-[auto_1fr_auto] items-start gap-4">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-white text-xs font-semibold text-ink-muted">
+                      {FREE_LIMIT + i + 1}
+                    </div>
+                    <div className="min-w-0">
+                      <div className="truncate font-medium text-ink">{it.title}</div>
+                      <div className="mt-1 line-clamp-1 text-sm text-ink-muted">{it.snippet}</div>
+                    </div>
+                    <div className="text-xl font-semibold text-ink">{it.momentum}</div>
                   </div>
-                  <div className="mt-1 line-clamp-2 text-sm text-ink-muted">
-                    {it.snippet}
+                ))}
+              </div>
+
+              <div className="mt-4 flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
+                <div>
+                  <div className="text-sm font-semibold text-ink">
+                    {data.items.length - FREE_LIMIT} more trending item
+                    {data.items.length - FREE_LIMIT === 1 ? "" : "s"} for Pro
                   </div>
-                  <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-ink-muted">
-                    <span>{it.publisher}</span>
-                    <span>·</span>
-                    <span>{formatDate(it.publishedAt)}</span>
-                    {it.technologies.slice(0, 3).map((t) => (
-                      <span
-                        key={t}
-                        className="rounded-full bg-paper-soft px-2 py-0.5 text-[11px] text-ink"
-                      >
-                        {CONCEPTS_BY_ID[t]?.name ?? t}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-                <div className="text-right">
-                  <div className="text-xs font-medium text-ink-muted">
-                    Momentum
-                  </div>
-                  <div className="text-xl font-semibold text-ink">
-                    {it.momentum}
+                  <div className="text-xs text-ink-muted">
+                    Free plan shows the top {FREE_LIMIT}. Pro unlocks the full ranked list every day.
                   </div>
                 </div>
-              </a>
-            </li>
-          ))}
-        </ol>
+                <Link
+                  href="/upgrade"
+                  className="rounded-full bg-ink px-4 py-2 text-sm font-medium text-paper hover:bg-ink-soft"
+                >
+                  Upgrade to Pro
+                </Link>
+              </div>
+            </div>
+          )}
+        </>
       )}
 
       {data && data.note && (
